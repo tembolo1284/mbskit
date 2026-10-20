@@ -52,6 +52,7 @@ const char* prepay_status_str(prepay_status_t status) {
         case PREPAY_ERR_UNSUPPORTED: return "unsupported operation";
         case PREPAY_ERR_ALLOC:       return "allocation failure";
         case PREPAY_ERR_INTERNAL:    return "internal error";
+        case PREPAY_ERR_SHORT_PATH:  return "scenario rate path shorter than horizon";
     }
     return "unknown status";
 }

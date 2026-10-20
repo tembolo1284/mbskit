@@ -16,9 +16,10 @@
 
 namespace prepay {
 
-// Internal rate/economic environment. Lands with the first behavioral model;
-// forward-declared so model signatures stay in C++-type-land. The shim will
-// reinterpret prepay_scenario_t* -> prepay::Scenario*. NULL in v0.
+// Internal rate/economic environment; defined in scenario.hpp. Forward-declared
+// here so model signatures stay in C++-type-land and this header doesn't drag
+// in <vector>. The shim reinterprets prepay_scenario_t* -> prepay::Scenario*.
+// Null for rate-independent models.
 class Scenario;
 
 // Abstract prepayment model.
@@ -43,7 +44,8 @@ public:
                               std::span<double>    out_smm) const = 0;
 
     // True if project_pool dereferences `scenario`. Rate-independent models
-    // return false; the shim rejects a null scenario for models that need one.
+    // return false; the shim rejects a null scenario for models that need one,
+    // and additionally guarantees scenario->n_months() >= out_smm.size().
     virtual bool requires_scenario() const noexcept = 0;
 
     // Caller-stamped version, carried for output tagging / audit reproducibility.
@@ -83,9 +85,44 @@ private:
     double speed_;
 };
 
+// Refi S-curve (0.2.0). Annual CPR is logistic in the refi incentive
+// (pool.wac - scenario.mortgage_rate[t]), damped by a linear seasoning ramp:
+//
+//     cpr(t) = season(t) * [floor + (ceiling - floor) * L(incentive(t))]
+//     L(x)   = 1 / (1 + exp(-steepness * (x - midpoint)))
+//
+// Incentive is in annual decimal (0.01 == 100bp), so steepness is ~400, not ~4.
+// Requires a scenario; the shim guarantees non-null and a long enough path.
+//
+// No burnout yet: this is a pure function of (pool, t), so two pools with the
+// same wac and age get identical paths regardless of how much refi opportunity
+// they have already been through. That is the next model change.
+class RefiScurveModel final : public Model {
+public:
+    struct Params {
+        double floor;             // baseline (turnover) CPR at zero incentive
+        double ceiling;           // saturation CPR deep in-the-money
+        double midpoint;          // incentive at half height
+        double steepness;         // logistic slope
+        double seasoning_months;  // ramp length; <= 1 disables the ramp
+    };
+
+    RefiScurveModel(const Params& params, std::uint32_t model_version);
+
+    void project_pool(const prepay_pool_t& pool,
+                      const Scenario*      scenario,
+                      std::span<double>    out_smm) const override;
+    bool requires_scenario() const noexcept override { return true; }
+
+private:
+    Params params_;
+};
+
 // Validate config and build the matching model. Throws std::invalid_argument on
 // bad parameters (e.g. CPR out of range); the C ABI shim catches and maps to a
-// prepay_status_t. struct_size validation happens at the boundary in the shim.
+// prepay_status_t. struct_size validation happens at the boundary in the shim,
+// which also normalizes short/long caller configs onto our layout before this
+// sees them — so every field read here is one the shim vouched for.
 std::unique_ptr<Model> make_model(const prepay_model_config_t& cfg);
 
 }  // namespace prepay

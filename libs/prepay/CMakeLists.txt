@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(prepay VERSION 0.1.0 LANGUAGES CXX)
+project(prepay VERSION 0.2.0 LANGUAGES CXX)
 
 option(PREPAY_BUILD_PYTHON "Build the nanobind Python extension" OFF)
 option(PREPAY_BUILD_TESTS  "Build native (CTest) tests"          OFF)
@@ -24,6 +24,7 @@ add_library(prepay SHARED
   src/prepay_error.cpp
   src/model.cpp
   src/engine.cpp
+  src/scenario.cpp
 )
 
 target_include_directories(prepay
@@ -39,6 +40,10 @@ set_target_properties(prepay PROPERTIES
   VERSION   ${PROJECT_VERSION}
   SOVERSION ${PROJECT_VERSION_MAJOR}
 )
+
+# Fail at link time on an unresolved symbol instead of letting an incomplete
+# .so build clean and break whoever links it first.
+target_link_options(prepay PRIVATE "LINKER:--no-undefined")
 
 if(PREPAY_BUILD_PYTHON)
   add_subdirectory(python)
