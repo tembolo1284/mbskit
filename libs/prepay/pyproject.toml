@@ -1,0 +1,18 @@
+[build-system]
+requires = ["scikit-build-core>=0.10", "nanobind>=2.0"]
+build-backend = "scikit_build_core.build"
+
+[project]
+name = "prepay"
+version = "0.1.0"
+description = "Mortgage prepayment model library"
+requires-python = ">=3.9"
+dependencies = ["numpy>=1.23"]
+
+[tool.scikit-build]
+cmake.version = ">=3.20"
+build-dir = "build/{wheel_tag}"     # cache builds per interpreter/platform
+wheel.py-api = "cp312"              # one stable-ABI wheel for CPython 3.12+
+
+[tool.scikit-build.cmake.define]
+PREPAY_BUILD_PYTHON = "ON"

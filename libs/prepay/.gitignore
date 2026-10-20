@@ -1,0 +1,24 @@
+# build artifacts
+build/
+build-native/
+*.so
+*.so.*
+*.o
+*.a
+
+# python
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+dist/
+wheelhouse/
+
+# editors / os
+.vscode/
+.idea/
+compile_commands.json
+.cache/
+.DS_Store
