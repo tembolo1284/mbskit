@@ -107,6 +107,7 @@ stage_abi() {
 }
 
 stage_py() {
+    [ -n "${VIRTUAL_ENV:-}" ] || die "no venv active; run ./build.sh venv first"
     log "py: build + editable-install the extension (scikit-build-core + nanobind)"
     pip install -e . --no-build-isolation
     python -c "import prepay; print('    import prepay', prepay.__version__)"

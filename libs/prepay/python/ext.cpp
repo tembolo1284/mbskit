@@ -252,10 +252,13 @@ NB_MODULE(_prepay, m) {
         .def("__enter__", [](Scenario& s) -> Scenario& { return s; },
              nb::rv_policy::reference_internal)
         .def("__exit__",
-             [](Scenario& s, nb::handle, nb::handle, nb::handle) {
+             [](Scenario& s, nb::object, nb::object, nb::object) {
                  s.close();
                  return false;  // never suppress an exception
-             })
+             },
+	     nb::arg("exc_type").none(),
+	     nb::arg("exc_value").none(),
+	     nb::arg("traceback").none())
         .def_prop_ro("closed", &Scenario::closed)
         .def_prop_ro("n_months", &Scenario::n_months)
         .def_prop_ro("scenario_id", &Scenario::scenario_id,
