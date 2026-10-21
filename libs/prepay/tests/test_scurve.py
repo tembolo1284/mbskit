@@ -72,8 +72,13 @@ def test_deep_out_of_the_money_approaches_floor():
 
 
 def test_deep_in_the_money_approaches_ceiling():
-    assert cpr_at(0.05) == pytest.approx(CEILING, abs=1e-9)
-
+    # The logistic never reaches 1, so CPR approaches the ceiling asymptotically
+    # from below. Deeper incentive must get strictly closer without crossing.
+    near = cpr_at(0.05)
+    deeper = cpr_at(0.10)
+    assert near < deeper
+    assert deeper <= CEILING + 1e-12
+    assert deeper == pytest.approx(CEILING, abs=1e-12)
 
 def test_midpoint_sits_at_half_height():
     # By construction, incentive == midpoint puts the logistic at exactly 0.5.
