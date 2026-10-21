@@ -148,9 +148,9 @@ mbs::core::Collateral to_collateral(const mbs_pool_spec& s) {
 }
 
 /* Validate and fill derived fields. Throws std::invalid_argument. */
-mbs_pool_spec normalise(const mbs_pool_spec& in, bool alow_arm = false) {
+mbs_pool_spec normalise(const mbs_pool_spec& in, bool allow_arm = false) {
     mbs_pool_spec s = in;
-    if (s.product == MBS_PRODUCT_ARM) throw std::invalid_argument("product is ARM; use mbs_arm_new");
+    if (s.product == MBS_PRODUCT_ARM && !allow_arm) throw std::invalid_argument("product is ARM; use mbs_arm_new");
     if (!(s.wac > 0) || !(s.net_coupon >= 0) || s.net_coupon > s.wac)
         throw std::invalid_argument("need 0 <= net_coupon <= wac, wac > 0");
     if (s.wam == 0) throw std::invalid_argument("wam is required");
