@@ -46,6 +46,16 @@ target_include_directories(mbs
 
 mbskit_warnings(mbs)
 
+# Second fence: linker version script. Only mbs_* may be dynamic, whatever
+# -fvisibility did. Also gives symbols a version node for check_abi.sh.
+if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang" AND NOT APPLE AND NOT WIN32)
+    target_link_options(mbs PRIVATE
+        -Wl,--version-script=${CMAKE_CURRENT_SOURCE_DIR}/libmbs.map
+        -Wl,--exclude-libs,ALL
+        -Wl,--no-undefined)
+    set_property(TARGET mbs APPEND PROPERTY LINK_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/libmbs.map)
+endif()
+
 # The C ABI is C99; consumers of mbs_c need nothing else. Mark the interface
 # so a pure-C target can link it without pulling in C++ feature requirements.
 target_compile_features(mbs PRIVATE cxx_std_17)

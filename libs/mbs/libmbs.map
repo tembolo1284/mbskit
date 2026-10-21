@@ -1,0 +1,11 @@
+/* Linker version script for libmbs.
+ * Second fence after -fvisibility=hidden: only mbs_* may be dynamic.
+ * Bump the version node when the ABI changes in a backwards-compatible way
+ * (append-only); a new major gets a new SONAME, not a new node.
+ */
+MBS_0.1 {
+    global:
+        mbs_*;
+    local:
+        *;
+};
