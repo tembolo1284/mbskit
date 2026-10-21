@@ -37,10 +37,11 @@ Stages:
   venv     create ./.venv and install build/test deps into it
   deps     install build/test deps into the current environment
   native   configure + build libprepay.so (C ABI only)  -> build-native/
-  csmoke   compile + run the C smoke test against libprepay
+  csmoke   compile + run the C smoke test against libprepayi
+  abi      compile + run the 0.1.0-caller ABI compatibility test
   py       build + editable-install the Python extension (scikit-build-core)
   pytest   run the Python test suite
-  all      venv -> native -> csmoke -> py -> pytest
+  all      venv -> native -> csmoke -> abi -> py -> pytest
   clean    remove build artifacts and uninstall the package
   help     show this message
 
@@ -94,6 +95,17 @@ stage_csmoke() {
     ok "C smoke passed"
 }
 
+stage_abi() {
+    log "abi: compile + run the ABI back-compat test against libprepay"
+    [ -f tests/abi_compat.c ] || die "tests/abi_compat.c not found"
+    [ -f "$NATIVE_DIR/libprepay.so" ] || stage_native
+    cc -std=c11 -Wall -Wextra -Werror -Iinclude tests/abi_compat.c \
+        -L"$NATIVE_DIR" -lprepay -lm -Wl,-rpath,"$ROOT/$NATIVE_DIR" \
+        -o "$NATIVE_DIR/abi_compat"
+    "$NATIVE_DIR/abi_compat"
+    ok "ABI compat passed"
+}
+
 stage_py() {
     log "py: build + editable-install the extension (scikit-build-core + nanobind)"
     pip install -e . --no-build-isolation
@@ -119,10 +131,11 @@ run_stage() {
         deps)   stage_deps   ;;
         native) stage_native ;;
         csmoke) stage_csmoke ;;
+	abi)    stage_abi    ;;
         py)     stage_py     ;;
         pytest) stage_pytest ;;
         clean)  stage_clean  ;;
-        all)    stage_venv; stage_native; stage_csmoke; stage_py; stage_pytest ;;
+        all)    stage_venv; stage_native; stage_csmoke; stage_abi; stage_py; stage_pytest ;;
         *)      die "unknown stage: $1  (run ./build.sh help)" ;;
     esac
 }

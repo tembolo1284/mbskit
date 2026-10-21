@@ -13,6 +13,7 @@
 #include "mbs/mbs.h"
 
 #include "core/engine.hpp"
+#include "arm/arm.hpp"
 
 #include <cmath>
 #include <cstring>
@@ -29,7 +30,12 @@ struct mbs_pool {
     mbs::core::Collateral col;
 };
 
-struct mbs_arm { mbs_pool_spec base; mbs_arm_spec arm; };
+struct mbs_arm { 
+	mbs_pool_spec           base; 
+	mbs_arm_spec            arm; 
+	mbs::core::Collateral   col;
+	mbs::arm::ResetTerms    terms;
+};
 struct mbs_tba { mbs_tba_spec spec; };
 struct mbs_cmo { int unused_; };
 
@@ -111,6 +117,22 @@ bool valid_source(const mbs_prepay_source* s) {
     return size_ok(s) && s->fn != nullptr;
 }
 
+mbs::arm::ResetTerms to_terms(const mbs_pool_spec& base, const mbs_arm_spec& a) {
+    mbs::arm::ResetTerms t;
+    t.margin                = a.margin;
+    t.months_to_first_reset = a.months_to_first_reset;
+    t.reset_freq_months     = a.reset_freq_months ? a.reset_freq_months : 12u;
+    t.lookback_days         = a.lookback_days;
+    t.initial_cap           = a.initial_cap;
+    t.periodic_cap          = a.periodic_cap;
+    t.lifetime_cap          = a.lifetime_cap;
+    t.lifetime_floor        = a.lifetime_floor;
+    t.rounding              = a.rounding;
+    /* spread: explicit if given, else derived from the base pool's wac - net */
+    t.servicing_spread      = a.net_margin_spread > 0 ? a.net_margin_spread : base.wac - base.net_coupon;
+    return t;
+}
+
 mbs::core::Collateral to_collateral(const mbs_pool_spec& s) {
     mbs::core::Collateral c;
     c.orig_balance   = s.orig_balance;
@@ -126,7 +148,7 @@ mbs::core::Collateral to_collateral(const mbs_pool_spec& s) {
 }
 
 /* Validate and fill derived fields. Throws std::invalid_argument. */
-mbs_pool_spec normalise(const mbs_pool_spec& in) {
+mbs_pool_spec normalise(const mbs_pool_spec& in, bool alow_arm = false) {
     mbs_pool_spec s = in;
     if (s.product == MBS_PRODUCT_ARM) throw std::invalid_argument("product is ARM; use mbs_arm_new");
     if (!(s.wac > 0) || !(s.net_coupon >= 0) || s.net_coupon > s.wac)
@@ -320,20 +342,53 @@ MBS_API mbs_stream_t* mbs_pool_project(const mbs_pool_t* p,
 /* Full surface exported; projection lands in 0.2. */
 
 MBS_API mbs_arm_t* mbs_arm_new(const mbs_pool_spec* base, const mbs_arm_spec* arm, mbs_err* err) {
+    if (!base || !arm) { set_err(err, MBS_ERRC_INVALID_ARG, "base/arm spec is NULL"); return nullptr; }
     if (!size_ok(base) || !size_ok(arm)) { set_err(err, MBS_ERRC_BAD_STRUCT_SIZE, "arm/base struct_size"); return nullptr; }
     if (base->product != MBS_PRODUCT_ARM) { set_err(err, MBS_ERRC_INVALID_ARG, "base->product must be MBS_PRODUCT_ARM"); return nullptr; }
-    try { auto a = std::make_unique<mbs_arm>(); a->base = *base; a->arm = *arm; return a.release(); }
-    catch (...) { on_exception(err); return nullptr; }
+    try {
+        auto a = std::make_unique<mbs_arm>();
+        a->base  = normalise(*base, /*allow_arm=*/true);
+        a->arm   = *arm;
+        a->col   = to_collateral(a->base);
+        a->terms = to_terms(a->base, a->arm);
+        mbs::arm::validate(a->terms);
+        if (a->terms.servicing_spread > a->col.wac)
+            throw std::invalid_argument("servicing spread exceeds initial coupon");
+        return a.release();
+    } catch (...) { on_exception(err); return nullptr; }
 }
+
 MBS_API void mbs_arm_free(mbs_arm_t* a) { delete a; }
+
 MBS_API int32_t mbs_arm_get_spec(const mbs_arm_t* a, mbs_pool_spec* base_out, mbs_arm_spec* arm_out, mbs_err* err) {
     if (!a) { set_err(err, MBS_ERRC_INVALID_ARG, "arm is NULL"); return MBS_ERRC_INVALID_ARG; }
     if (base_out && base_out->struct_size) { uint32_t k = base_out->struct_size; copy_out(base_out, k, a->base); base_out->struct_size = k; }
     if (arm_out  && arm_out->struct_size)  { uint32_t k = arm_out->struct_size;  copy_out(arm_out,  k, a->arm);  arm_out->struct_size  = k; }
     return 0;
 }
-MBS_API mbs_stream_t* mbs_arm_project(const mbs_arm_t*, const mbs_prepay_source*, const mbs_rate_path*, mbs_err* err) {
-    set_err(err, MBS_ERRC_UNSUPPORTED, "mbs_arm_project: not implemented in 0.1"); return nullptr;
+
+/* path is the index path and is required. It doubles as the market rate seen
+ * by the prepay callback (ctx->market_rate) in 0.1; a separate market path
+ * is reserved for a later minor version. */
+MBS_API mbs_stream_t* mbs_arm_project(const mbs_arm_t* a,
+                                      const mbs_prepay_source* prepay,
+                                      const mbs_rate_path* path,
+                                      mbs_err* err) {
+    if (!a) { set_err(err, MBS_ERRC_INVALID_ARG, "arm is NULL"); return nullptr; }
+    if (!valid_source(prepay)) { set_err(err, MBS_ERRC_INVALID_ARG, "prepay source invalid"); return nullptr; }
+    if (!path) { set_err(err, MBS_ERRC_INVALID_ARG, "index path is required for ARM"); return nullptr; }
+    if (!size_ok(path)) { set_err(err, MBS_ERRC_BAD_STRUCT_SIZE, "mbs_rate_path.struct_size"); return nullptr; }
+    if (!path->rates || path->n == 0) { set_err(err, MBS_ERRC_INVALID_ARG, "index path is empty"); return nullptr; }
+    try {
+        auto s = std::make_unique<mbs_stream>();
+        s->s = mbs::arm::project(a->col, a->terms, make_path(path), make_speed(prepay));
+        return s.release();
+    }
+    catch (const CallbackFailure& f) {
+        set_err(err, MBS_ERRC_CALLBACK_FAILED, ("prepay callback returned " + std::to_string(f.code)).c_str());
+        return nullptr;
+    }
+    catch (...) { on_exception(err); return nullptr; }
 }
 
 /* ------------------------------------------------------------- tba ------- */

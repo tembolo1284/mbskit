@@ -84,6 +84,18 @@ if(MBSKIT_BUILD_TESTS)
     target_link_libraries(mbs_smoke_cpp PRIVATE mbskit::mbs)
     mbskit_warnings(mbs_smoke_cpp)
     add_test(NAME mbs.smoke.cpp COMMAND mbs_smoke_cpp)
+
+    add_executable(mbs_arm_c tests/c/arm.c)
+    target_link_libraries(mbs_arm_c PRIVATE mbskit::mbs_c m)
+    set_target_properties(mbs_arm_c PROPERTIES
+        C_STANDARD 99 C_STANDARD_REQUIRED ON C_EXTENSIONS OFF)
+    mbskit_warnings(mbs_arm_c)
+    add_test(NAME mbs.arm.c COMMAND mbs_arm_c)
+
+    add_executable(mbs_arm_cpp tests/cpp/arm.cpp)
+    target_link_libraries(mbs_arm_cpp PRIVATE mbskit::mbs)
+    mbskit_warnings(mbs_arm_cpp)
+    add_test(NAME mbs.arm.cpp COMMAND mbs_arm_cpp)
 endif()
 
 # ---------------------------------------------------------------- install --
